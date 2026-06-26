@@ -1,0 +1,7 @@
+-- CreateTable
+CREATE TABLE "Draft" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "prompt" TEXT NOT NULL,
+    "draft" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
