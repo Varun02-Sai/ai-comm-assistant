@@ -1,33 +1,102 @@
-// lib/gemini.ts
+import { TONE_PROMPTS } from "./constants";
+import type { ToneId } from "./constants";
 
-
-export async function generateEmailDraft(prompt: string): Promise<string> {
-const GEMINI_URL =
-`https://generativelanguage.googleapis.com/v1beta/models/` +
-`gemini-flash-lite-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-
-const systemInstruction = "You are a professional business email writer. Given a rough intent, write a concise polished email. Output only the email body.";
-const body = JSON.stringify({
-contents: [{ parts: [{ text: `${systemInstruction}\n\nIntent: ${prompt}` }] }],
-generationConfig: { maxOutputTokens: 512, temperature: 0.7 }
-});
-
-let res;
-for (let i = 0; i < 2; i++) { // only retry once
-res = await fetch(GEMINI_URL, {
-method: "POST",
-headers: { 'Content-Type': 'application/json' },
-body
-});
-if (res.ok) break;
-if (res.status !== 503) break;
-if (i === 0) await new Promise(r => setTimeout(r, 500)); // fast retry delay
+class GeminiError extends Error {
+  constructor(
+    message: string,
+    public statusCode?: number
+  ) {
+    super(message);
+    this.name = "GeminiError";
+  }
 }
 
-if (!res || !res.ok) {
-const errorText = res ? await res.text() : 'No response';
-throw new Error(`Gemini API error: ${res?.status} - ${errorText}`);
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelay: number = 500
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (error instanceof GeminiError && error.statusCode && error.statusCode < 500) {
+        throw error;
+      }
+
+      if (attempt < maxRetries) {
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 200;
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  throw lastError;
 }
-const data = await res.json();
-return data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+
+export async function generateEmailDraft(prompt: string, tone: ToneId = "professional"): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new GeminiError("GEMINI_API_KEY environment variable is not configured", 500);
+  }
+
+  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const toneInstruction = TONE_PROMPTS[tone] || TONE_PROMPTS.professional;
+
+  const systemInstruction = [
+    "You are an expert business communication writer with years of experience crafting impactful emails.",
+    toneInstruction,
+    "Guidelines:",
+    "- Write only the email body (no subject line unless specifically asked)",
+    "- Use proper greeting and sign-off appropriate to the tone",
+    "- Keep it concise but complete",
+    "- Use clear paragraph breaks for readability",
+    "- Ensure the message achieves its intended purpose effectively",
+    "- Do not include any meta-commentary about the email",
+  ].join("\n");
+
+  const result = await withRetry(async () => {
+    const res = await fetch(GEMINI_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: `${systemInstruction}\n\nUser's intent: ${prompt}` }],
+          },
+        ],
+        generationConfig: {
+          maxOutputTokens: 1024,
+          temperature: tone === "professional" ? 0.5 : tone === "friendly" ? 0.8 : 0.6,
+          topP: 0.9,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const errorBody = await res.text().catch(() => "Unknown error");
+      throw new GeminiError(`API request failed: ${res.status} - ${errorBody}`, res.status);
+    }
+
+    return res.json();
+  });
+
+  const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new GeminiError("No content generated — the model returned an empty response");
+  }
+
+  return text.trim();
+}
+
+export function countWords(text: string): number {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter((w: string) => w.length > 0).length;
 }

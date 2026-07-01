@@ -1,14 +1,20 @@
-// prisma/schema.prisma
 generator client {
-provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
+
 datasource db {
-provider = "sqlite"
-url = "file:./dev.db"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
+
 model Draft {
-id Int @id @default(autoincrement())
-prompt String
-draft String
-createdAt DateTime @default(now())
+  id         Int      @id @default(autoincrement())
+  prompt     String
+  draft      String
+  tone       String   @default("professional")
+  category   String   @default("general")
+  isFavorite Boolean  @default(false)
+  wordCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

@@ -1,8 +1,40 @@
-.env.local
-.env
+# Dependencies
 node_modules/
+
+# Next.js build output
 .next/
+out/
+
+# Environment files (secrets)
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# Database files
+*.db
+*.db-journal
 prisma/dev.db
 prisma/dev.db-journal
-dev.db
-dev.db-journal
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vercel
+.vercel
